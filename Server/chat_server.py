@@ -9,18 +9,41 @@ def read_msg(clients, sock_cli, addr_cli, username_cli):
             break
 
         #parsing pesannya
-        dest, msg = data.decode("utf-8").split("|")
-        msg = "<{}>: {}".format(username_cli, msg)
+        dest, msg = data.split(b"|", 1)
+        dest = dest.decode("utf-8")
 
         #kirim data ke semua client
         if dest == "bcast":
-            send_broadcast(clients, msg, addr_cli)
+            msg = msg.decode("utf-8")
+            _msg = f"<{username_cli}>: {msg}"
+            send_broadcast(clients, _msg, addr_cli)
+        elif dest == "sendfile":
+            dest_username, filename, size, filedata = msg.split(b'|', 3)
+            dest_username = dest_username.decode("utf-8")
+            filename = filename.decode("utf-8")
+            size = int(size.decode("utf-8"))
+
+            while len(filedata) < size:
+                if size-len(filedata) > 65536:
+                    filedata += sock_cli.recv(65536)
+                else:
+                    filedata += sock_cli.recv(size - len(filedata))
+                    break
+            
+            dest_sock_cli = clients[dest_username][0]
+            send_file(dest_sock_cli, filename, size, filedata, dest_username)
         else:
+            msg = msg.decode("utf-8")
+            _msg = f"<{username_cli}>: {msg}"
             dest_sock_cli = clients[dest][0]
-            send_msg(dest_sock_cli, msg)
-        print(data)
+            send_msg(dest_sock_cli, _msg)
     sock_cli.close()
     print("connection closed", addr_cli)
+
+def send_file(sock_cli, filename, size, filedata, username):
+    file = f'file|{username}|{filename}|{size}|'.encode('utf-8')
+    file += filedata
+    sock_cli.sendall(file)
 
 def send_broadcast(clients, data, sender_addr_cli):
     for sock_cli, addr_cli, _ in clients.values():
@@ -28,7 +51,8 @@ def send_broadcast(clients, data, sender_addr_cli):
             send_msg(sock_cli, data)
 
 def send_msg(sock_cli, data):
-    sock_cli.send(bytes(data, "utf-8"))
+    message = f'message|{data}'
+    sock_cli.send(bytes(message, "utf-8"))
 
 server_address = ('192.168.0.106', 80)
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
