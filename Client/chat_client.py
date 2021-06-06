@@ -4,7 +4,7 @@ import threading
 import os
 import ntpath
 
-def read_msg(sock_cli):
+def read_msg(sock_cli, friend_req_queue):
     while True:
         data = sock_cli.recv(65535)
         if len(data) == 0:
@@ -29,21 +29,36 @@ def read_msg(sock_cli):
                     break
             with open(filename, 'wb') as f:
                 f.write(filedata)
+        elif datatype == "reqfriend":
+            friend = message.decode("utf-8")
+            friend_req_queue.add(friend)
+            print(f"Friend request from {friend}\n"
+                  f"type: 'accfriend {friend}' to accept friend request")
 
 sock_cli = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-sock_cli.connect(('192.168.0.106', 80))
+sock_cli.connect(('localhost', 80))
 
 #kirim username ke server
-sock_cli.send(bytes(sys.argv[1], "utf-8"))
+username = input("Username: ")
+sock_cli.send(bytes(username, "utf-8"))
+# sock_cli.send(bytes(sys.argv[1], "utf-8"))
+
+friend_req_queue = set()
 
 #buat thread utk membaca pesan dan jalankan threadnya
-thread_cli = threading.Thread(target=read_msg, args=(sock_cli,))
+thread_cli = threading.Thread(target=read_msg, args=(sock_cli, friend_req_queue))
 thread_cli.start()
 
 try:
     while True:
-        dest = input("Instant Messanger : \n1. message <username> <message> (kirim message biasa)\n2. bcast <message> (kirim broadcast)\n3. sendfile <username> <filepath> (kirim file)\n4. exit (keluar)\n")
+        dest = input("Instant Messanger : \n"
+                     "1. message <username> <message> (kirim message biasa)\n"
+                     "2. bcast <message> (kirim broadcast)\n"
+                     "3. sendfile <username> <filepath> (kirim file)\n"
+                     "4. reqfriend <username>\n"
+                     "5. accfriend <username>\n"
+                     "6. exit (keluar)\n")
         msg = dest.split(" ", 1)
 
         if msg[0] == "exit":
@@ -62,6 +77,16 @@ try:
             with open(filepath, 'rb') as f:
                 filedata += f.read()
             sock_cli.sendall(filedata)
+        elif msg[0] == "reqfriend":
+            sock_cli.send(f"reqfriend|{msg[1]}".encode("utf-8"))
+        elif msg[0] == "accfriend":
+            friend = msg[1]
+            print(friend_req_queue)
+            if friend in friend_req_queue:
+                friend_req_queue.remove(friend)
+                sock_cli.send(f"accfriend|{friend}".encode("utf-8"))
+            else:
+                print("not detected")
 
 except KeyboardInterrupt:
     sock_cli.close()
